@@ -1,0 +1,109 @@
+# +-----------------------------------------+
+# | A SHORT INTRO DO the data.table package |
+# +-----------------------------------------+
+
+# preparing your data can feel clumsy with data.frames
+# data.table is optimized for panels, reduces programming time
+# and for large datasets, reduces computing time
+
+# Everything happens in the [filter]
+# data.table is a class of data and a wrapper for data.frame (compatible)
+# every data.table is a data.frame. I've never(!) had compatability issues
+
+# Basic Syntax:
+# DT[i,j,by]
+# subset rows with 'i'
+# calculate 'j' (here we adress columns)
+# do that 'by' category, variable... (such as individual or time+sector // any variable that has categories)
+
+install.packages("data.table")
+library(data.table)
+
+#some example data:
+set.seed(123)
+DT <- data.table(id=rep(3:1,each=10), # each id is repeated 10 times
+                 time=rep(2001:2010,3), # time repeated 3 times
+                 x2=rnorm(30), # draw 30 numbers from a normal distribution
+                 x1=rnorm(30,6)) # mean = 6
+#help("rep") = replicate elements of vectors and lists
+#help("rnorm")
+
+DT <- DT[order(id)] # ordering the data.table by "id"
+setcolorder(DT,c("id","time","x1","x2")) # ordering the columns of the data.table
+
+frame <- as.data.frame(DT) #for comparison
+
+
+# +------------------+
+# | LETS LOOK AT [i] |
+# +------------------+
+
+#some things work (almost) like they do with a data.frame:
+
+#address rows:
+frame[3,] # third row
+frame[3] #comma is needed to get the third row. Otherwise, third collumn
+DT[3,] # third row
+DT[3] #comma is optional. Third row
+#to get a column:
+DT[,3]
+
+frame[frame$time>2009,] #data.frame syntax
+DT[DT$time>2009,] # same syntax as the data.frame
+DT[time>2009,] # now, see that we do not use the $
+DT[time>2009] # remember, comma is optional
+
+#more conditions possible:
+DT[time>2009 & id==3, x1]
+
+
+# +--------------------+
+# | LETS LOOK AT [i,j] |
+# +--------------------+
+
+#address rows and columns:
+frame[3,"x1"]
+DT[3,"x1"]
+DT[3,x1]
+#data.frame syntax always works for data.table, as long as you're not trying to
+#mix the two
+
+#more than one column:
+frame[1:5, c("x1","x2")] # for DF we need to concatenate
+DT[1:5,list(x1,x2)] # for DT we need a list
+#or
+DT[1:5, .(x1,x2)]
+#help("list")
+
+frame[frame$time>2009 & frame$id==3, c("x1","x2")]
+DT[time>2009 & id==3, .(x1,x2)] #is starting to look simpler
+
+#you can assign new variables:
+DT[, x3:=rnorm(30, 3)] # creating a new column named x3
+#and delete them
+DT[,x3:=NULL]
+
+#you can create new data.table with results from old one:
+DT2 <- DT[, .(mean(x1),sd(x2))]
+#recycling if to long (in old data.table and in new one):
+DT[, mean.x1:=mean(x1)] # here I create a new column (thanks to :=) named mean.x1 which has values equal to the mean of x1 of the previous DT
+#create new data table with more than one variable:
+DT[,.(x1=x1,
+      mean=mean(x1),
+      sd=sd(x1))] #not interesting yet but will get interesting with "by="
+
+
+#We can do much more complicated stuff in j of course but lets first look at
+#the by option:
+# +-----------------------+
+# | LETS LOOK AT [i,j,by] |
+# +-----------------------+
+
+#calculate mean by id
+DT[,mean(x1), by = id]
+#or:
+DT[,mean(x1),id] #I'll keep the "by=" in this file, personal preference...
+
+#add mean by id as variable (remember recycling):
+DT[,mean_by_id.x1:=mean(x1),by=id]
+DT[,mean_by_id.x1:=NULL]
