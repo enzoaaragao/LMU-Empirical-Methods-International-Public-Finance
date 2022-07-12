@@ -4,18 +4,22 @@ library("data.table")
 load("./Data_BIS_ForClass.RData")
 
 # 2. check structure
+Data <- as.data.table(Data)
 str(Data)
 Data[countrypair == "Belgium.Australia"]
 
 unique(Data[, country])
 unique(Data[, counterparty])
 unique(Data[, time])
+unique(Data[, countrypair])
 
 # 3. Plot (with a line, not dots) the liabilities that Irish banks report against German non-bank
 # counterparties using plot() and ggplot().
 library("ggplot2")
 
 Data[country == "Ireland" & counterparty == "Germany", lbs.l.all.nonbanks] #data I want to plot
+# or...
+Data[countrypair == "Ireland.Germany", lbs.l.all.nonbanks]
 
 plot(y = Data[country == "Ireland" & counterparty == "Germany", lbs.l.all.nonbanks], 
      x =Data[country == "Ireland" & counterparty == "Germany", time],
@@ -23,7 +27,7 @@ plot(y = Data[country == "Ireland" & counterparty == "Germany", lbs.l.all.nonban
 
 ggplot(data = Data[country == "Ireland" & counterparty == "Germany"],
        aes(x = time, y = lbs.l.all.nonbanks)) +
-    geom_line()
+  geom_line()
 
 # Don't know how to automatically pick scale for object of type yearqtr. Defaulting to continuous.
 install.packages("zoo")
@@ -37,7 +41,7 @@ library("zoo")
 
 ?lm()
 my_lm_test <- lm(log(lbs.l.all.nonbanks) ~ treaty.signed + landlinesp100_cparty + gdp_cparty + pop_cparty,
-   data = Data) # to get rid of the constant just type -1 at the beginning
+                 data = Data) # to get rid of the constant just type -1 at the beginning
 summary(my_lm_test) # pay attention, you just created a new object, see below
 my_lm_test["coefficients"]
 
@@ -45,13 +49,13 @@ my_lm_test["coefficients"]
 install.packages("plm")
 library("plm")
 
-my_plm_test <- plm(log(lbs.l.all.nonbanks) ~ 1 + treaty.signed + landlinesp100_cparty + gdp_cparty + pop_cparty,
-    data = Data,
-    model = "pooling")
+my_plm_test <- plm(log(lbs.l.all.nonbanks) ~ treaty.signed + landlinesp100_cparty + gdp_cparty + pop_cparty,
+                   data = Data,
+                   model = "pooling")  # I can specify a constant but there is no need to do so
 
 summary(my_lm_test)
 summary(my_plm_test)
-# I get the same results because I have not transformed the data for plm yet
+# I get the same results because I have not transformed the data for plm yet. Also, I used the pooling method
 
 
 # 5. Calculate the vector of OLS coefficients without using functions of the same regression (use
@@ -61,13 +65,14 @@ mymatrix <- matrix(1:16, ncol = 4)
 mymatrix2 <- matrix(c(rep(2,12), rep(4,4)), ncol = 4)
 
 mymatrix*5 # R multiplies it element by element
-mymatrix %*% mymatrix2
+mymatrix %*% mymatrix2 # to really "multiply" matrices, I need t´he %*%
+mymatrix * mymatrix2 # see the difference?
 
 # betahat = (X'X)^-1 X'y
-y <- log(Data[, lbs.l.all.nonbanks])
+y <- log(Data[, lbs.l.all.nonbanks]) # from the column of the data.table I create a vector
 str(y)
 
-X <- Data[, .(treaty.signed, landlinesp100_cparty,  gdp_cparty,  pop_cparty) ]
+X <- Data[, .(treaty.signed, landlinesp100_cparty,  gdp_cparty,  pop_cparty) ] # pay attention. Instead of using a . I could use the comand list
 # it is missing the constant
 X <- as.matrix(cbind(1, X))
 
@@ -97,14 +102,14 @@ Data[, treaty_within := treaty.signed - mean(treaty.signed, na.rm = T), by = cou
 
 # 7. Calculate the vector of OLS coefficients of the within transformed data without using functions.
 y <- Data[, liabs_within]
-X <- as.matrix(Data[, .(treaty_within, landlines_within,  gdp_within,  pop_within) ])
+X <- as.matrix(Data[, list(treaty_within, landlines_within,  gdp_within,  pop_within) ])
 
 solve(t(X) %*% X) %*% t(X) %*% y
 
 
 #8. Create the same result using lm().
 my_lm_test_within <- lm(liabs_within ~ -1 + treaty_within + landlines_within + gdp_within + pop_within,
-                 data = Data) # to get rid of the constant just type -1 at the beginning
+                        data = Data) # to get rid of the constant just type -1 at the beginning
 summary(my_lm_test_within)
 
 # extra, without the within and using the plm
@@ -116,9 +121,8 @@ summary(my_plm_fe)
 
 # extra extra, using a dummy for countrypair
 my_lm_test_dummy <- lm(log(lbs.l.all.nonbanks) ~ -1 + treaty.signed + landlinesp100_cparty + gdp_cparty + pop_cparty + as.factor(countrypair),
-                 data = Data)
+                       data = Data)
 summary(my_lm_test_dummy)
-
 
 # 9.& 10.Plot (with lines) the liabilities that Irish banks report against 5 counterparties of your choice.
 
