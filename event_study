@@ -1,0 +1,256 @@
+#-------------+
+# Event Study +
+#-------------+
+rm(list=ls(all=T))
+getwd()
+setwd("C:/Users/ra35mex/Downloads")
+
+install.packages("data.table")
+install.packages("ggplot2")
+install.packages("plm")
+
+library("data.table")
+library("ggplot2")
+library("plm")
+
+## 1. load data and familiarize
+load("ES_data.RData")
+str(Data)
+
+# how many individuals do I have?
+unique(Data[, unit])
+
+# how many entries does each unit has?
+Data[, .N, by = unit][,2]
+
+# do I only have treatment = 1 or 0 ?
+unique(Data[, treatment])
+
+# how do my y variable looks like?
+hist(Data[, y])
+
+# do I have NA values?
+Data[is.na(unit)]
+Data[is.na(y)]
+
+
+## 2. Event Study in 2005
+
+# dlm dummy (distributed lag model):
+Data[, dummy_2005_dlm := ifelse(year >= 2005, 1, 0)]
+
+# interact dummy with treatment status:
+Data[, dummy_2005_dlm_treat := dummy_2005_dlm * treatment]
+
+ourpanel <- plm(y ~ dummy_2005_dlm_treat,
+                index = c("unit", "year"),
+                model = "within",
+                effect = "twoways",
+                data = Data)
+
+install.packages("lmtest")
+library("lmtest")
+coeftest(ourpanel, cov = vcovHC(ourpanel, type = "sss"))
+# you can interpret this result. It tells us nothing about the timing as you know
+
+
+# 0 0 0 0 1 1 1 1 1 1 
+
+# 0 0 0 0 1 0 0 0 0 0 | j=0
+# 0 0 0 0 0 1 0 0 0 0 | j=1
+# 0 0 0 0 0 0 1 0 0 0 | j=2
+
+
+# create event study dummies:
+Data[, dummy_2005_es := ifelse(year == 2005, 1, 0)]
+Data[, dummy_2005_es_treat := dummy_2005_es * treatment]
+
+Data[, dummy_jminus4_es_treat := shift(dummy_2005_es_treat, 4, type = "lead", fill = 0), by = unit]
+Data[, dummy_jminus3_es_treat := shift(dummy_2005_es_treat, 3, type = "lead", fill = 0), by = unit]
+Data[, dummy_jminus2_es_treat := shift(dummy_2005_es_treat, 2, type = "lead", fill = 0), by = unit]
+Data[, dummy_jminus1_es_treat := shift(dummy_2005_es_treat, 1, type = "lead", fill = 0), by = unit]
+Data[, dummy_jplus0_es_treat := dummy_2005_es_treat]
+Data[, dummy_jplus1_es_treat := shift(dummy_2005_es_treat, 1, type = "lag", fill = 0), by = unit]
+Data[, dummy_jplus2_es_treat := shift(dummy_2005_es_treat, 2, type = "lag", fill = 0), by = unit]
+Data[, dummy_jplus3_es_treat := shift(dummy_2005_es_treat, 3, type = "lag", fill = 0), by = unit]
+Data[, dummy_jplus4_es_treat := shift(dummy_2005_es_treat, 4, type = "lag", fill = 0), by = unit]
+Data[, dummy_jplus5_es_treat := shift(dummy_2005_es_treat, 5, type = "lag", fill = 0), by = unit]
+
+#Data[dummy_jminus4_es_treat == 1, dummy_jminus3_es_treat := 1 ] , this is called "bin" the variable. Try it out
+# estimate the model
+ourpanel_es <- plm(y ~ dummy_jminus4_es_treat +
+                       dummy_jminus3_es_treat + 
+                       dummy_jminus2_es_treat +
+                       #dummy_jminus1_es_treat + this is what it means by normalization, now the matrix is invertable and not collinear
+                       dummy_jplus0_es_treat +
+                       dummy_jplus1_es_treat +
+                       dummy_jplus2_es_treat +
+                       dummy_jplus3_es_treat + 
+                       dummy_jplus4_es_treat +
+                       dummy_jplus5_es_treat,
+                   index = c("unit", "year"),
+                   model = "within",
+                   effect = "twoways",
+                   data = Data)
+ourtest_es <- coeftest(ourpanel_es, vcov = vcovHC(ourpanel_es, type = "sss"))
+
+# plot the coefficient for all time periods
+
+myjs <- rownames(ourtest_es)
+myjs <- c(as.numeric(substr(myjs[grepl("jminus", myjs)], 13, 13)) * -1,
+          as.numeric(substr(myjs[grepl("jplus", myjs)], 12, 12)))
+myjs <- c(myjs, -1)
+
+str(ourtest_es[, 1])
+
+plotdata_es <- data.table(j = myjs,
+                          coefs = c(ourtest_es[, 1], 0),
+                          ses = c(ourtest_es[, 2], 0))
+
+ggplot(plotdata_es, aes(x = j, y = coefs)) +
+  geom_line() +
+  geom_point() + 
+  geom_errorbar(aes(ymin = coefs - 1.96*ses, ymax = coefs + 1.96*ses)) +
+  geom_vline(xintercept = -1, linetype = "dashed", color = "red") +
+  geom_hline(yintercept = 0) +
+  theme_bw()
+
+# This is an event study specification with a binned endpoint (note that, in the 
+# real world, you only need to bin if event time is unequal to calendar time)
+
+# lets return to the panel model used in the beginning and build a distributed
+# lag model:
+
+# +-----+
+# | DLM |
+# +-----+
+
+# lets lag the standard panel dummy we used above
+Data[treatment == 1, dummy_jminus4_dlm_treat := shift(dummy_2005_dlm_treat, 4, type = "lead", fill = 1), by = unit]
+Data[treatment == 1, dummy_jminus3_dlm_treat := shift(dummy_2005_dlm_treat, 3, type = "lead", fill = 1), by = unit]
+Data[treatment == 1, dummy_jminus2_dlm_treat := shift(dummy_2005_dlm_treat, 2, type = "lead", fill = 1), by = unit]
+Data[treatment == 1, dummy_jminus1_dlm_treat := shift(dummy_2005_dlm_treat, 1, type = "lead", fill = 1), by = unit]
+Data[treatment == 1, dummy_jplus0_dlm_treat := dummy_2005_dlm_treat]
+Data[treatment == 1, dummy_jplus1_dlm_treat := shift(dummy_2005_dlm_treat, 1, type = "lag", fill = 0), by = unit]
+Data[treatment == 1, dummy_jplus2_dlm_treat := shift(dummy_2005_dlm_treat, 2, type = "lag", fill = 0), by = unit]
+Data[treatment == 1, dummy_jplus3_dlm_treat := shift(dummy_2005_dlm_treat, 3, type = "lag", fill = 0), by = unit]
+Data[treatment == 1, dummy_jplus4_dlm_treat := shift(dummy_2005_dlm_treat, 4, type = "lag", fill = 0), by = unit]
+Data[treatment == 1, dummy_jplus5_dlm_treat := shift(dummy_2005_dlm_treat, 5, type = "lag", fill = 0), by = unit]
+
+# could also assign Data[treatment == 0, dummy...]
+Data[is.na(dummy_jminus4_dlm_treat), dummy_jminus4_dlm_treat := 0]
+Data[is.na(dummy_jminus3_dlm_treat), dummy_jminus3_dlm_treat := 0]
+Data[is.na(dummy_jminus2_dlm_treat), dummy_jminus2_dlm_treat := 0]
+Data[is.na(dummy_jminus1_dlm_treat), dummy_jminus1_dlm_treat := 0]
+Data[is.na(dummy_jplus0_dlm_treat), dummy_jplus0_dlm_treat := 0]
+Data[is.na(dummy_jplus1_dlm_treat), dummy_jplus1_dlm_treat := 0]
+Data[is.na(dummy_jplus2_dlm_treat), dummy_jplus2_dlm_treat := 0]
+Data[is.na(dummy_jplus3_dlm_treat), dummy_jplus3_dlm_treat := 0]
+Data[is.na(dummy_jplus4_dlm_treat), dummy_jplus4_dlm_treat := 0]
+Data[is.na(dummy_jplus5_dlm_treat), dummy_jplus5_dlm_treat := 0]
+
+
+# again, have a look at the data to see what these dummies look like
+
+# now we can run a panel regression (note that there is no binning and no baseline here):
+ourpanel_dlm <- plm(y ~ dummy_jminus4_dlm_treat + 
+                      dummy_jminus3_dlm_treat +
+                      dummy_jminus2_dlm_treat +
+                      dummy_jminus1_dlm_treat +
+                      dummy_jplus0_dlm_treat +
+                      dummy_jplus1_dlm_treat +
+                      dummy_jplus2_dlm_treat +
+                      dummy_jplus3_dlm_treat +
+                      dummy_jplus4_dlm_treat +
+                      dummy_jplus5_dlm_treat,
+                    index = c("unit", "year"),
+                    model = "within",
+                    effect = "twoways",
+                    data = Data)
+ourtest_dlm <- coeftest(ourpanel_dlm, vcov. = vcovHC(ourpanel_dlm, type = "HC0"))
+
+# again, create some plotdata:
+myjs <- rownames(ourtest_dlm)
+myjs <- c(as.numeric(substr(myjs[grepl("jminus", myjs)],13,13)) * -1, # the leading j's
+          as.numeric(substr(myjs[grepl("jplus", myjs)],12,12))) # the lagging j's
+
+plotdata_dlm <- data.table(j = myjs,
+                           coefs = c(ourtest_dlm[, 1]),
+                           ses = c(ourtest_dlm[, 2]))
+
+# and we can plot this:
+ggplot(plotdata_dlm, aes(y = coefs, x = j)) +
+  geom_line() +
+  geom_point() +
+  geom_errorbar(aes(ymin = coefs - 1.96 * ses, ymax = coefs + 1.96 * ses)) +
+  geom_hline(yintercept = 0) +
+  geom_vline(xintercept = -1, linetype = "dashed", color = "red")
+# I'll leave the "make it pretty" part to you.
+# note what I changed in the code to plot the second graph?
+
+# now its up to you to use the Schmidheiny and Siegloch equation 9 (page 14)
+# to get from the dlm coefficients here:
+ourtest_dlm[, 1]
+
+# to the es coefficients here:
+ourtest_es[, 1]
+
+# hint: start from the back, the binned one is a bit more difficult
+
+# j = -3
+sum(sum(ourtest_dlm[2:3,1]), sum(ourtest_dlm[1:3,1]))/2 *-1
+
+# j = -2
+sum(ourtest_dlm[3:3,1])*-1
+ourtest_es
+# j = -1
+0
+
+# j = 0
+sum(ourtest_dlm[4:4,1])
+
+# j = 1
+sum(ourtest_dlm[4:5,1])
+
+# j = 2
+sum(ourtest_dlm[4:6,1])
+
+# j = 3
+sum(ourtest_dlm[4:7,1])
+
+# j = 4
+sum(ourtest_dlm[4:8,1])
+
+# j = 5
+sum(ourtest_dlm[4:9,1])
+
+
+# and now that you've made it this far, here is how the data was created again:
+
+# create data:
+set.seed(1)
+
+Data <- data.table(unit = rep(paste0("unit",1:1000), each =10),
+                   year =rep(2001:2010, 1000),
+                   y = rnorm(10000),
+                   treatment = rep(c(1,0), each = 5000))
+
+
+# lets start with one specific event that hits in 2005 and
+# has a positive effect
+Data[treatment == 1 & year == 2005, y := y + 0.5]
+Data[treatment == 1 & year == 2006, y := y + 0.25]
+# so your methods should find a large treatment effect in 2005 and a smaller one
+# in 2006
+
+
+# new test with a different package - feols
+install.packages("fixest")
+library("fixest")
+
+Data[, distance := year - 2005]
+
+myfeols <- feols(y ~ i(as.factor(distance), treatment, -1) | unit + year, data = Data)
+iplot(myfeols)
+
+myfeols
